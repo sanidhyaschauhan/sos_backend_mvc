@@ -1,2 +1,49 @@
-runtime: python39
-entrypoint: gunicorn -b :$PORT app:app
+runtime: python39  # Specify the Python version
+entrypoint: gunicorn -b :$PORT app:app  # Command to start Gunicorn with your Flask app
+
+env_variables:
+  # You can define environment variables here, if needed.
+
+# If your application requires other Google Cloud services or specific settings, add them here
+
+# For example, setting up environment variables:
+# env_variables:
+#   MY_ENV_VAR: 'value'
+
+handlers:
+- url: /.*
+  script: auto
+  secure: always
+  redirect_http_response_code: 301
+
+# Automatic scaling configuration
+automatic_scaling:
+  target_cpu_utilization: 0.6
+  min_instances: 1
+  max_instances: 5
+
+# Manual scaling example (commented out)
+# manual_scaling:
+#   instances: 1
+
+# Resource allocation (example)
+resources:
+  cpu: 1
+  memory_gb: 0.5
+  disk_size_gb: 10
+
+# If your application uses VPC access or needs network settings
+# network:
+#   instance_tag: your-tag
+#   name: default
+#   subnetwork_name: default
+
+# You might need to configure health checks if you use Compute Engine
+# health_check:
+#   enable_health_check: True
+#   check_interval_sec: 5
+#   timeout_sec: 4
+#   unhealthy_threshold: 2
+#   healthy_threshold: 2
+
+# Include here any libraries that are not in the standard environment
