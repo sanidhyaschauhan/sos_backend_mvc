@@ -3,9 +3,6 @@ from neurelo_client import NeureloClient
 from models.image_analyzer import ImageAnalyzer
 from PIL import Image
 
-image_path = '../try.jpg'
-image = Image.open(image_path)
-
 class EmergencyModel:
     
     def __init__(self):
