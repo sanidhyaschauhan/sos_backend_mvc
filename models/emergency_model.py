@@ -1,10 +1,6 @@
 from models.api_client import APIClient
 from neurelo_client import NeureloClient
 from models.image_analyzer import ImageAnalyzer
-from PIL import Image
-
-image_path = '../try.jpg'
-image = Image.open(image_path)
 
 class EmergencyModel:
     
@@ -16,8 +12,8 @@ class EmergencyModel:
         api_client = APIClient()
         firellava_analysis = api_client.analyze_emergency(image_base64)
         llama_analysis = api_client.analyze_data(firellava_analysis, user_category, user_description)
-        image_analysis = self.image_analyzer.analyze_image_for_crime(image_base64)
-        severity = llama_analysis.get('severity', 'low')
+        image_analysis = self.image_analyzer.analyze_image_for_crime_or_disaster(image_base64)
+        severity = image_analysis.get('severity', 'low')
         is_real_report = self.determine_real_report(location, severity, image_analysis)
         
         return {

@@ -1,6 +1,6 @@
 import requests
 from requests.exceptions import RequestException
-from settings import OPENAI_API_KEY, HUGGINGFACE_API_KEY
+from settings import OPENAI_API_KEY
 import logging
 import json
 import base64
@@ -12,20 +12,18 @@ class APIClient:
 
     def analyze_emergency(self, base64_image):
         try:
-            # Step 1: Get the image caption from Hugging Face
-            huggingface_response = self._analyze_image_with_huggingface(base64_image)
+            gpt_vision_response = self._analyze_image_with_gpt_vision(base64_image)
 
-            if 'error' in huggingface_response:
-                logging.error(f"Hugging Face API Error: {huggingface_response['error']}")
-                return huggingface_response
+            if 'error' in gpt_vision_response:
+                logging.error(f"GPT-4 Vision API Error: {gpt_vision_response['error']}")
+                return gpt_vision_response
 
-            caption = huggingface_response[0].get('generated_text', None)
+            caption = gpt_vision_response.get('image_description', None)
             if caption:
-                logging.info(f"Received caption: {caption}")
+                logging.info(f"Received image description from GPT-4: {caption}")
             else:
-                return {"error": "Invalid Hugging Face response: 'generated_text' key not found"}
+                return {"error": "Invalid GPT-4 Vision response: 'image_description' key not found"}
 
-            # Step 2: Pass the caption to OpenAI GPT with a prompt
             prompt = (
                 f"You are a First Responder Analyst. Based on the following description of an image: '{caption}', "
                 "analyze the incident and suggest which first responders (police, firefighters, EMTs, paramedics) "
@@ -44,10 +42,9 @@ class APIClient:
             gpt_response = self._send_to_gpt(prompt)
 
             if 'error' in gpt_response:
-                logging.error(f"OpenAI API Error: {gpt_response['error']}")
+                logging.error(f"OpenAI GPT-4 API Error: {gpt_response['error']}")
                 return gpt_response
 
-            # Step 3: Attempt to extract valid JSON from GPT response
             gpt_analysis = self._extract_json_from_gpt_response(gpt_response)
             if gpt_analysis:
                 return gpt_analysis
@@ -58,26 +55,51 @@ class APIClient:
             logging.exception("An unexpected error occurred in analyze_emergency.")
             return {"error": f"An unexpected error occurred: {e}"}
 
-    def _analyze_image_with_huggingface(self, base64_image):
-        url = "https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning"
+    def _analyze_image_with_gpt_vision(self, base64_image):
+        url = "https://api.openai.com/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {HUGGINGFACE_API_KEY}"
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
         }
-        
-        # Decode the base64 image
-        image_data = base64.b64decode(base64_image)
+
+        prompt = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What’s in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ]
+
+        data = {
+            "model": "gpt-4-turbo",  
+            "messages": prompt,
+            "max_tokens": 300
+        }
 
         try:
-            response = requests.post(url, headers=headers, data=image_data)
+            response = requests.post(url, json=data, headers=headers)
             response.raise_for_status()
             response_json = response.json()
-            return response_json  # This will contain the generated caption
+            
+            if "choices" in response_json and response_json["choices"]:
+                gpt_response_content = response_json["choices"][0]["message"]["content"]
+                return {"image_description": gpt_response_content}  
+            else:
+                logging.error("Invalid response format from GPT-4 Vision API.")
+                return {"error": "Invalid response format from GPT-4 Vision API"}
         except RequestException as e:
-            logging.error(f"RequestException while calling Hugging Face API: {e}")
-            return {"error": f"Failed to analyze image with Hugging Face: {e}"}
+            logging.error(f"RequestException while calling GPT-4 Vision API: {e}")
+            return {"error": f"Failed to analyze image with GPT-4 Vision: {e}"}
         except ValueError:
-            logging.error("Invalid JSON response from Hugging Face API.")
-            return {"error": "Invalid JSON response from Hugging Face API"}
+            logging.error("Invalid JSON response from GPT-4 Vision API.")
+            return {"error": "Invalid JSON response from GPT-4 Vision API"}
 
     def _send_to_gpt(self, prompt):
         url = "https://api.openai.com/v1/chat/completions"
@@ -109,7 +131,6 @@ class APIClient:
 
     def _extract_json_from_gpt_response(self, gpt_response):
         try:
-            # Use a regular expression to find JSON-like content within the response
             json_match = re.search(r"\{.*?\}", gpt_response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
@@ -163,3 +184,4 @@ class APIClient:
         except ValueError:
             logging.error("Invalid JSON response from OpenAI API.")
             return {"error": "Invalid JSON response from OpenAI API"}
+
