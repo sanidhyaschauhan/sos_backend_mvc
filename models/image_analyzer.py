@@ -1,19 +1,17 @@
-import requests
 import logging
-import json
-import re
-from settings import OPENAI_API_KEY
+from models.api_client import APIClient  
 
 logging.basicConfig(level=logging.INFO)
 
 class ImageAnalyzer:
     
     def __init__(self):
-        self.api_key = OPENAI_API_KEY
-        self.model = "gpt-4-turbo"
-    
-    def analyze_image_for_crime_or_disaster(self, image_base64):
-        image_analysis = self._analyze_image_with_gpt_vision(image_base64)
+        self.client = APIClient()  # Use the existing APIClient
+        self.delay = 1 
+
+    def analyze_image_for_crime_or_disaster(self, base64_image):
+        # Use the APIClient to get the analysis result
+        image_analysis = self.client.analyze_emergency(base64_image)
         
         if 'error' in image_analysis:
             logging.error(f"Image analysis failed: {image_analysis['error']}")
@@ -29,17 +27,17 @@ class ImageAnalyzer:
             }
         
         caption = image_analysis.get('image_description', None)
-        objects_detected = self._parse_objects_from_caption(caption)  # Use the new method here
-        severity = self.detect_severity(caption)  # Now, this will work
-        illegal_activity = self.detect_illegal_activity(objects_detected)  # Now, this will work
+        objects_detected = self._parse_objects_from_caption(caption)  
+        severity = self.detect_severity(caption)  
+        illegal_activity = self.detect_illegal_activity(objects_detected)  
         person_descriptions = None
         
         if "person" in objects_detected:
             # First describe the people
-            person_descriptions = self.describe_people_in_image(image_base64)
+            person_descriptions = self.describe_people_in_image(base64_image)
             
             # Now, ask GPT if any crime is being committed
-            crime_detected, suspect_description = self._check_for_crime(image_base64)
+            crime_detected, suspect_description = self._check_for_crime(base64_image)
             
             if crime_detected:
                 return {
@@ -75,45 +73,6 @@ class ImageAnalyzer:
                 "suspect_description": None
             }
 
-    def _analyze_image_with_gpt_vision(self, base64_image):
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
-        # Format the prompt properly with base64 image data
-        prompt = [
-            {
-                "role": "user",
-                "content": f"What’s in this image? data:image/jpeg;base64,{base64_image}"
-            }
-        ]
-
-        data = {
-            "model": "gpt-4-turbo",
-            "messages": prompt,
-            "max_tokens": 300
-        }
-
-        try:
-            response = requests.post(url, json=data, headers=headers)
-            response.raise_for_status()
-            response_json = response.json()
-            
-            if "choices" in response_json and response_json["choices"]:
-                gpt_response_content = response_json["choices"][0]["message"]["content"]
-                return {"image_description": gpt_response_content}  
-            else:
-                logging.error(f"Invalid response format from GPT-4 Vision API: {response.text}")
-                return {"error": "Invalid response format from GPT-4 Vision API"}
-        except requests.exceptions.RequestException as e:
-            logging.error(f"RequestException while calling GPT-4 Vision API: {e}")
-            return {"error": f"Failed to analyze image with GPT-4 Vision: {e}"}
-        except ValueError:
-            logging.error("Invalid JSON response from GPT-4 Vision API.")
-            return {"error": "Invalid JSON response from GPT-4 Vision API"}
-    
     def _check_for_crime(self, base64_image):
         prompt = [
             {
@@ -130,7 +89,7 @@ class ImageAnalyzer:
             }
         ]
         
-        response = self._send_to_gpt(prompt)
+        response = self.client._send_to_gpt(prompt)
         if "error" in response:
             logging.error(f"Error detecting crime: {response['error']}")
             return False, None
@@ -157,48 +116,12 @@ class ImageAnalyzer:
             }
         ]
         
-        response = self._send_to_gpt(prompt)
+        response = self.client._send_to_gpt(prompt)
         if "error" in response:
             logging.error(f"Error describing people: {response['error']}")
             return ["Unable to describe people in the image."]
         
         return [response]
-    
-    def _send_to_gpt(self, prompt):
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "gpt-4",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 500
-        }
-
-        try:
-            response = requests.post(url, json=data, headers=headers)
-            response.raise_for_status()
-
-            # Log the raw response to understand what is being returned
-            logging.info(f"Raw GPT-4 API Response: {response.text}")
-
-            response_json = response.json()  # Try parsing the response as JSON
-
-            if "choices" in response_json and response_json["choices"]:
-                return response_json["choices"][0]["message"]["content"]
-            else:
-                logging.error("Invalid response format from GPT-4 Vision API.")
-                return {"error": "Invalid response format from GPT-4 Vision API"}
-        except requests.exceptions.RequestException as e:
-            logging.error(f"RequestException while calling GPT-4 Vision API: {e}")
-            return {"error": f"Failed to get response from GPT-4 Vision API: {e}"}
-        except ValueError as ve:
-            # Handle non-JSON response
-            logging.error(f"Invalid JSON response from GPT-4 Vision API: {ve}")
-            logging.error(f"Raw Response: {response.text}")
-            return {"error": f"Received a non-JSON response: {response.text}"}
-
 
     def _parse_objects_from_caption(self, caption):
         objects = []
@@ -209,7 +132,7 @@ class ImageAnalyzer:
                     objects.append(keyword)
         return objects
 
-    # New method to detect severity based on keywords in the caption
+    # Method to detect severity based on keywords in the caption
     def detect_severity(self, caption):
         if not caption:
             return "low"
